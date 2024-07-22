@@ -18,7 +18,7 @@ class BackboneCSDI(nn.Module):
         n_layers,
         n_heads,
         n_channels,
-        d_target,
+        d_target, # * d_target: n_features가 이거로 넘어옴
         d_time_embedding,
         d_feature_embedding,
         d_diffusion_embedding,
@@ -27,6 +27,13 @@ class BackboneCSDI(nn.Module):
         schedule,
         beta_start,
         beta_end,
+                
+        # ! EDIT
+        d_class_embedding,
+        n_classes,
+
+        # * Algorithm 2
+        w,
     ):
         super().__init__()
 
@@ -37,7 +44,19 @@ class BackboneCSDI(nn.Module):
         self.n_channels = n_channels
         self.n_diffusion_steps = n_diffusion_steps
 
-        d_side = d_time_embedding + d_feature_embedding
+        # ! EDIT
+        self.d_class_embedding = d_class_embedding
+        self.n_classes = n_classes
+
+        # * Algorithm 2
+        self.w = w
+
+        self.embed_layer = nn.Embedding(num_embeddings=d_target, embedding_dim=d_feature_embedding)
+        self.class_embed_layer = nn.Embedding(num_embeddings=n_classes, embedding_dim=d_class_embedding)
+        
+
+        # ! d_side만 수정, d_input은 그대로
+        d_side = d_time_embedding + d_feature_embedding + d_class_embedding
         if self.is_unconditional:
             d_input = 1
         else:
@@ -83,19 +102,23 @@ class BackboneCSDI(nn.Module):
 
         return total_input
 
+    # * Algorithm 2: class_label 추가, observed_tp 전달받음
     def calc_loss_valid(
-        self, observed_data, cond_mask, indicating_mask, side_info, is_train
+        self, observed_data, cond_mask, indicating_mask, side_info, is_train, observed_tp, class_label
     ):
         loss_sum = 0
         for t in range(self.n_diffusion_steps):  # calculate loss for all t
+            # * class_label 추가, observed_tp 전달
             loss = self.calc_loss(
-                observed_data, cond_mask, indicating_mask, side_info, is_train, set_t=t
+                observed_data, cond_mask, indicating_mask, side_info, is_train, observed_tp, class_label, set_t=t
             )
             loss_sum += loss.detach()
         return loss_sum / self.n_diffusion_steps
 
+
+    # * Algorithm 2: class_label 추가, observed_tp 전달받음
     def calc_loss(
-        self, observed_data, cond_mask, indicating_mask, side_info, is_train, set_t=-1
+        self, observed_data, cond_mask, indicating_mask, side_info, is_train, observed_tp, class_label, set_t=-1
     ):
         B, K, L = observed_data.shape
         device = observed_data.device
@@ -112,7 +135,26 @@ class BackboneCSDI(nn.Module):
 
         total_input = self.set_input_to_diffmodel(noisy_data, observed_data, cond_mask)
 
-        predicted = self.diff_model(total_input, side_info, t)  # (B,K,L)
+
+        # * Algorithm 2: class_label embedding 추가
+        if class_label is not None:
+            # with class_label
+            predicted_cond = self.diff_model(total_input, side_info, t)
+
+            # without class_label
+            zero_class_label = torch.zeros_like(class_label).to(device)
+            uncond_side_info = self.get_side_info(observed_tp, cond_mask, zero_class_label)
+            predicted_uncond = self.diff_model(total_input, uncond_side_info, t)
+
+            # Classifier-free guided score 계산
+            w = self.w
+            predicted = (1 + w) * predicted_cond - w * predicted_uncond
+        else:
+            predicted = self.diff_model(total_input, side_info, t)  # (B,K,L)
+        # * --------------------------- *
+
+
+        # predicted = self.diff_model(total_input, side_info, t)  # (B,K,L)
 
         target_mask = indicating_mask
         residual = (noise - predicted) * target_mask
@@ -120,7 +162,9 @@ class BackboneCSDI(nn.Module):
         loss = (residual**2).sum() / (num_eval if num_eval > 0 else 1)
         return loss
 
-    def forward(self, observed_data, cond_mask, side_info, n_sampling_times):
+
+    # * Algorithm 2: class_label 추가, observed_tp 전달받음
+    def forward(self, observed_data, cond_mask, side_info, n_sampling_times, observed_tp, class_label):
         B, K, L = observed_data.shape
         device = observed_data.device
         imputed_samples = torch.zeros(B, n_sampling_times, K, L).to(device)
@@ -150,9 +194,25 @@ class BackboneCSDI(nn.Module):
                     cond_obs = (cond_mask * observed_data).unsqueeze(1)
                     noisy_target = ((1 - cond_mask) * current_sample).unsqueeze(1)
                     diff_input = torch.cat([cond_obs, noisy_target], dim=1)  # (B,2,K,L)
-                predicted = self.diff_model(
-                    diff_input, side_info, torch.tensor([t]).to(device)
-                )
+                
+                # * Algorithm 2: Sampling 추가
+                if class_label is not None:
+                    # with class_label
+                    predicted_cond = self.diff_model(diff_input, side_info, torch.tensor([t]).to(device))
+
+                    # without class_label
+                    zero_class_label = torch.zeros_like(class_label).to(device)
+                    uncond_side_info = self.get_side_info(observed_tp, cond_mask, zero_class_label)
+                    predicted_uncond = self.diff_model(diff_input, uncond_side_info, torch.tensor([t]).to(device))
+
+                    # Classifier-free guided score 계산
+                    w = self.w
+                    predicted = (1 + w) * predicted_cond - w * predicted_uncond
+                else:
+                    predicted = self.diff_model(
+                        diff_input, side_info, torch.tensor([t]).to(device)
+                    )
+                # * --------------------------- *
 
                 coeff1 = 1 / self.alpha_hat[t] ** 0.5
                 coeff2 = (1 - self.alpha_hat[t]) / (1 - self.alpha[t]) ** 0.5
@@ -167,3 +227,44 @@ class BackboneCSDI(nn.Module):
 
             imputed_samples[:, i] = current_sample.detach()
         return imputed_samples
+
+
+    # * For algorithm 2, copy from core.py
+    @staticmethod
+    def time_embedding(pos, d_model=128):
+        pe = torch.zeros(pos.shape[0], pos.shape[1], d_model).to(pos.device)
+        position = pos.unsqueeze(2)
+        div_term = 1 / torch.pow(
+            10000.0, torch.arange(0, d_model, 2, device=pos.device) / d_model
+        )
+        pe[:, :, 0::2] = torch.sin(position * div_term)
+        pe[:, :, 1::2] = torch.cos(position * div_term)
+        return pe
+
+    def get_side_info(self, observed_tp, cond_mask, class_label):
+        B, K, L = cond_mask.shape
+        device = observed_tp.device
+        time_embed = self.time_embedding(
+            pos=observed_tp, d_model=self.d_time_embedding
+        )  # (B,L,emb)
+        time_embed = time_embed.to(device)
+        time_embed = time_embed.unsqueeze(2).expand(-1, -1, K, -1)
+        feature_embed = self.embed_layer(
+            torch.arange(self.d_target).to(device)
+        )  # (K,emb)
+        feature_embed = feature_embed.unsqueeze(0).unsqueeze(0).expand(B, L, -1, -1)
+
+        class_embed = self.class_embed_layer(class_label)
+        class_embed = class_embed.unsqueeze(1).unsqueeze(2).expand(-1, L, K, -1)
+
+        side_info = torch.cat(
+            [time_embed, feature_embed, class_embed], dim=-1
+        )  # (B,L,K,emb+d_feature_embedding)
+        side_info = side_info.permute(0, 3, 2, 1)  # (B,*,K,L)
+
+        if not self.is_unconditional:
+            side_mask = cond_mask.unsqueeze(1)  # (B,1,K,L)
+            side_info = torch.cat([side_info, side_mask], dim=1)
+
+        return side_info
+    

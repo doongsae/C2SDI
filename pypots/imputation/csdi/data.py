@@ -27,12 +27,14 @@ class DatasetForCSDI(BaseDataset):
 
     """
 
+    # ! EDIT: return_class_label 추가
     def __init__(
         self,
         data: Union[dict, str],
         target_strategy: str,
         return_X_ori: bool,
         file_type: str = "hdf5",
+        return_class_label: bool = False,
     ):
         super().__init__(
             data=data,
@@ -43,6 +45,10 @@ class DatasetForCSDI(BaseDataset):
         )
         assert target_strategy in ["random", "hist", "mix"]
         self.target_strategy = target_strategy
+
+        # ! EDIT: 추가
+        self.return_class_label = return_class_label
+        self.class_label = data['class_label']
 
     @staticmethod
     def get_rand_mask(observed_mask):
@@ -135,6 +141,10 @@ class DatasetForCSDI(BaseDataset):
         if self.return_y:
             sample.append(self.y[idx].to(torch.long))
 
+        # ! EDIT: class_label 추가
+        if self.return_class_label:
+            sample.append(self.class_label[idx])
+
         return sample
 
     def _fetch_data_from_file(self, idx: int) -> Iterable:
@@ -221,6 +231,10 @@ class DatasetForCSDI(BaseDataset):
         if self.return_y:
             sample.append(torch.tensor(self.file_handle["y"][idx], dtype=torch.long))
 
+        # ! EDIT: class_label 추가
+        if self.return_class_label:
+            sample.append(self.class_label[idx])
+
         return sample
 
 
@@ -232,8 +246,15 @@ class TestDatasetForCSDI(DatasetForCSDI):
         data: Union[dict, str],
         return_X_ori: bool,
         file_type: str = "hdf5",
+        return_class_label: bool = False,
+
     ):
         super().__init__(data, "random", return_X_ori, file_type)
+
+        # ! EDIT: 추가
+        self.return_class_label = return_class_label
+        self.class_label = data['class_label']
+
 
     def _fetch_data_from_array(self, idx: int) -> Iterable:
         """Fetch data according to index.
@@ -280,6 +301,10 @@ class TestDatasetForCSDI(DatasetForCSDI):
 
         if self.return_y:
             sample.append(self.y[idx].to(torch.long))
+
+        # ! EDIT: class_label 추가
+        if self.return_class_label:
+            sample.append(self.class_label[idx])
 
         return sample
 
@@ -335,5 +360,9 @@ class TestDatasetForCSDI(DatasetForCSDI):
 
         if self.return_y:
             sample.append(torch.tensor(self.file_handle["y"][idx], dtype=torch.long))
+
+        # ! EDIT: class_label 추가
+        if self.return_class_label:
+            sample.append(self.class_label[idx])
 
         return sample

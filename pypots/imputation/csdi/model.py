@@ -125,6 +125,14 @@ class CSDI(BaseNNImputer):
         d_time_embedding: int,
         d_feature_embedding: int,
         d_diffusion_embedding: int,
+
+        # ! EDIT
+        d_class_embedding,
+        n_classes,
+
+        # * Algorithm 2
+        w,
+
         n_diffusion_steps: int = 50,
         target_strategy: str = "random",
         is_unconditional: bool = False,
@@ -154,6 +162,9 @@ class CSDI(BaseNNImputer):
         self.n_steps = n_steps
         self.target_strategy = target_strategy
 
+        # ! EDIT: p_uncond 추가; CSDI 논문 기준 0.1 사용
+        self.p_uncond = 0.1
+
         # set up the model
         self.model = _CSDI(
             n_features,
@@ -168,6 +179,13 @@ class CSDI(BaseNNImputer):
             schedule,
             beta_start,
             beta_end,
+
+            # ! EDIT
+            d_class_embedding,
+            n_classes,
+
+            # * Algorithm 2
+            w,
         )
         self._print_model_size()
         self._send_model_to_given_device()
@@ -176,6 +194,7 @@ class CSDI(BaseNNImputer):
         self.optimizer = optimizer
         self.optimizer.init_optimizer(self.model.parameters())
 
+    # ! EDIT: class_label 추가
     def _assemble_input_for_training(self, data: list) -> dict:
         (
             indices,
@@ -183,6 +202,7 @@ class CSDI(BaseNNImputer):
             indicating_mask,
             cond_mask,
             observed_tp,
+            class_label,
         ) = self._send_data_to_given_device(data)
 
         inputs = {
@@ -190,24 +210,28 @@ class CSDI(BaseNNImputer):
             "indicating_mask": indicating_mask.permute(0, 2, 1),  # for loss calc
             "cond_mask": cond_mask.permute(0, 2, 1),  # for masking X_ori
             "observed_tp": observed_tp,
+            "class_label": class_label,
         }
         return inputs
 
     def _assemble_input_for_validating(self, data: list) -> dict:
         return self._assemble_input_for_training(data)
 
+    # ! EDIT: 마찬가지로 class_label 추가
     def _assemble_input_for_testing(self, data: list) -> dict:
         (
             indices,
             X,
             cond_mask,
             observed_tp,
+            class_label,
         ) = self._send_data_to_given_device(data)
 
         inputs = {
             "X": X.permute(0, 2, 1),  # for model input
             "cond_mask": cond_mask.permute(0, 2, 1),  # missing mask
             "observed_tp": observed_tp,
+            "class_label": class_label,
         }
         return inputs
 
@@ -228,6 +252,11 @@ class CSDI(BaseNNImputer):
                 for idx, data in enumerate(training_loader):
                     training_step += 1
                     inputs = self._assemble_input_for_training(data)
+
+                    # ! EDIT: 
+                    if np.random.rand() < self.p_uncond:
+                        inputs["class_label"] = torch.zeros_like(inputs["class_label"]) 
+
                     self.optimizer.zero_grad()
                     results = self.model.forward(inputs)
                     # use sum() before backward() in case of multi-gpu training
@@ -248,6 +277,11 @@ class CSDI(BaseNNImputer):
                     with torch.no_grad():
                         for idx, data in enumerate(val_loader):
                             inputs = self._assemble_input_for_validating(data)
+
+                            # ! EDIT: 
+                            if np.random.rand() < self.p_uncond:
+                                inputs["class_label"] = torch.zeros_like(inputs["class_label"])     
+
                             results = self.model.forward(
                                 inputs, training=False, n_sampling_times=0
                             )
@@ -326,19 +360,24 @@ class CSDI(BaseNNImputer):
             f"Finished training. The best model is from epoch#{self.best_epoch}."
         )
 
+    # ! EDIT: return_class_label 추가
     def fit(
         self,
         train_set: Union[dict, str],
         val_set: Optional[Union[dict, str]] = None,
         file_type: str = "hdf5",
         n_sampling_times: int = 1,
+        return_class_label: bool = True,
     ) -> None:
         # Step 1: wrap the input data with classes Dataset and DataLoader
+        
+        # ! EDIT: return_class_label 추가
         training_set = DatasetForCSDI(
             train_set,
             self.target_strategy,
             return_X_ori=False,
             file_type=file_type,
+            return_class_label=return_class_label
         )
         training_loader = DataLoader(
             training_set,
@@ -350,11 +389,14 @@ class CSDI(BaseNNImputer):
         if val_set is not None:
             if not key_in_data_set("X_ori", val_set):
                 raise ValueError("val_set must contain 'X_ori' for model validation.")
+            
+            # ! EDIT: return_class_label 추가
             val_set = DatasetForCSDI(
                 val_set,
                 self.target_strategy,
                 return_X_ori=True,
                 file_type=file_type,
+                return_class_label=return_class_label,
             )
             val_loader = DataLoader(
                 val_set,
@@ -371,11 +413,13 @@ class CSDI(BaseNNImputer):
         # Step 3: save the model if necessary
         self._auto_save_model_if_necessary(confirm_saving=True)
 
+    # ! EDIT: return_class_label 추가
     def predict(
         self,
         test_set: Union[dict, str],
         file_type: str = "hdf5",
         n_sampling_times: int = 1,
+        return_class_label: bool = True,
     ) -> dict:
         """
 
@@ -407,7 +451,9 @@ class CSDI(BaseNNImputer):
 
         # Step 1: wrap the input data with classes Dataset and DataLoader
         self.model.eval()  # set the model as eval status to freeze it.
-        test_set = TestDatasetForCSDI(test_set, return_X_ori=False, file_type=file_type)
+        
+        # ! EDIT: return_class_label 추가
+        test_set = TestDatasetForCSDI(test_set, return_X_ori=False, file_type=file_type, return_class_label=return_class_label)
         test_loader = DataLoader(
             test_set,
             batch_size=self.batch_size,
@@ -435,10 +481,12 @@ class CSDI(BaseNNImputer):
         }
         return result_dict
 
+    # ! EDIT: return_class_label 추가
     def impute(
         self,
         test_set: Union[dict, str],
         file_type: str = "hdf5",
+        return_class_label: bool = True,
     ) -> np.ndarray:
         """Impute missing values in the given data with the trained model.
 
@@ -457,5 +505,6 @@ class CSDI(BaseNNImputer):
             Imputed data.
         """
 
-        result_dict = self.predict(test_set, file_type=file_type)
+        # ! EDIT: return_class_label 추가
+        result_dict = self.predict(test_set, file_type=file_type, return_class_label=return_class_label)
         return result_dict["imputation"]
