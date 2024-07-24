@@ -20,8 +20,8 @@ def train(training_dataset, validation_dataset, n_features, saving_path):
     target_strategy="random",
     n_diffusion_steps=50,
     batch_size=32,
-    epochs=1,
-    # patience=10,
+    epochs=200,
+    patience=10,
     optimizer=Adam(lr=5e-5),
 
     num_workers=0,

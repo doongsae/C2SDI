@@ -95,8 +95,7 @@ def imputation(test_dataset, orig_data, csdi, saving_path, predicted=False):
 
 
   # Visualize results and save with images
-  # for i in range(len(orig_data['test_X'])):
-  for i in range(1):
+  for i in range(len(orig_data['test_X'])):
     data_lst = [csdi_imputation[i][j] for j in range(10)]
     ori_data = orig_data['test_X_ori'][i]
 
