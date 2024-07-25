@@ -26,9 +26,9 @@ python run.py [path] [data_path] (--other_optional_args)
 
 * `--result_save_path` (_Optional_): The directory path where the trained model / output images will be saved. (Default: `'results/'`)
 
-* `seq_len` (_Optional_): The sequence length of the data. This specifies the number of time steps or elements in each input sequence of the dataset. (Default: 300)
+* `--seq_len` (_Optional_): The sequence length of the data. This specifies the number of time steps or elements in each input sequence of the dataset. (Default: 300)
 
-* `seed` (_Optional_): Global seed value for running program. (Default: 42)
+* `--seed` (_Optional_): Global seed value for running program. (Default: 42)
 
 
 ## Notifications
