@@ -37,7 +37,8 @@ We wrote the code assuming __binary__ classification. So if you want to change t
 
 ## References
 <a id="1">[1]</a> 
-Joonseong Kang, Seonggyun Lee, Jeyoon Yeom, Kyungwoo Song. "C2SDI: Conditional Score-based Diffusion Models with Classifier-free Guidance." IJCAI 2024 Workshop (Large Knowledge-Enhanced Models)
+Kang, J., Lee, S., Yeom, J., Song, K. (2024). C2SDI: Conditional Score-based Diffusion Models with 
+Classifier-free Guidance. IJCAI 2024 Workshop on Large Knowledge-Enhanced Models.
 
 <a id="2">[2]</a> 
 Tashiro, Yusuke, et al. "CSDI: Conditional score-based diffusion models for probabilistic time series imputation." Advances in Neural Information Processing Systems 34 (2021): 24804-24816.
