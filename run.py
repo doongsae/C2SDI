@@ -57,56 +57,43 @@ def split_data(data):
   train_data, temp_data = train_test_split(data, test_size=0.3, random_state=42)
   valid_data, test_data = train_test_split(temp_data, test_size=0.5, random_state=42)
   return train_data, valid_data, test_data
- 
+
 train_class_0, valid_class_0, test_class_0 = split_data(class_0_data)
 train_class_1, valid_class_1, test_class_1 = split_data(class_1_data)
 
+# 훈련 데이터만 결합
+train_data = train_class_0 + train_class_1
 
-# 먼저 각 클래스의 데이터를 리스트에서 3D NumPy 배열로 변환
-train_class_0 = np.array(train_class_0)
-valid_class_0 = np.array(valid_class_0)
-test_class_0 = np.array(test_class_0)
+# 훈련 데이터를 3D NumPy 배열로 변환
+train_data_array = np.array(train_data)
 
-train_class_1 = np.array(train_class_1)
-valid_class_1 = np.array(valid_class_1)
-test_class_1 = np.array(test_class_1)
+# 훈련 데이터로 정규화 수행
+scaler = StandardScaler()
+train_data_reshaped = train_data_array.reshape(-1, 3)
+scaler.fit(train_data_reshaped)
 
-# 클래스 0에 대한 정규화
-scaler_0 = StandardScaler()
-train_class_0_reshaped = train_class_0.reshape(-1, 3)
-scaler_0.fit(train_class_0_reshaped)
+# 모든 데이터셋에 대해 정규화 적용
+def normalize_and_convert(data):
+  data_array = np.array(data)
+  data_reshaped = data_array.reshape(-1, 3)
+  data_normalized = scaler.transform(data_reshaped).reshape(data_array.shape)
+  return data_normalized
 
-train_class_0_normalized = scaler_0.transform(train_class_0_reshaped).reshape(train_class_0.shape)
-valid_class_0_normalized = scaler_0.transform(valid_class_0.reshape(-1, 3)).reshape(valid_class_0.shape)
-test_class_0_normalized = scaler_0.transform(test_class_0.reshape(-1, 3)).reshape(test_class_0.shape)
-
-# 클래스 1에 대한 정규화
-scaler_1 = StandardScaler()
-train_class_1_reshaped = train_class_1.reshape(-1, 3)
-scaler_1.fit(train_class_1_reshaped)
-
-train_class_1_normalized = scaler_1.transform(train_class_1_reshaped).reshape(train_class_1.shape)
-valid_class_1_normalized = scaler_1.transform(valid_class_1.reshape(-1, 3)).reshape(valid_class_1.shape)
-test_class_1_normalized = scaler_1.transform(test_class_1.reshape(-1, 3)).reshape(test_class_1.shape)
+train_data_normalized = normalize_and_convert(train_data)
+valid_class_0_normalized = normalize_and_convert(valid_class_0)
+valid_class_1_normalized = normalize_and_convert(valid_class_1)
+test_class_0_normalized = normalize_and_convert(test_class_0)
+test_class_1_normalized = normalize_and_convert(test_class_1)
 
 # DataFrame으로 변환하는 함수
 def to_dataframe(normalized_data):
-    columns = ['X', 'Y', 'Z']
-    return [pd.DataFrame(data, columns=columns) for data in normalized_data]
+  columns = ['X', 'Y', 'Z']
+  return [pd.DataFrame(data, columns=columns) for data in normalized_data]
 
 # 각 정규화된 데이터를 DataFrame 리스트로 변환
-train_class_0_normalized_df = to_dataframe(train_class_0_normalized)
-valid_class_0_normalized_df = to_dataframe(valid_class_0_normalized)
-test_class_0_normalized_df = to_dataframe(test_class_0_normalized)
-
-train_class_1_normalized_df = to_dataframe(train_class_1_normalized)
-valid_class_1_normalized_df = to_dataframe(valid_class_1_normalized)
-test_class_1_normalized_df = to_dataframe(test_class_1_normalized)
-
-# training, validation, test 세트를 합치기
-train_data = train_class_0_normalized_df + train_class_1_normalized_df
-valid_data = valid_class_0_normalized_df + valid_class_1_normalized_df
-test_data = test_class_0_normalized_df + test_class_1_normalized_df
+train_data = to_dataframe(train_data_normalized)
+valid_data = to_dataframe(valid_class_0_normalized) + to_dataframe(valid_class_1_normalized)
+test_data = to_dataframe(test_class_0_normalized) + to_dataframe(test_class_1_normalized)
 
 print("Number of Training/ Validation / Test set: ", len(train_data), '/', len(valid_data), '/', len(test_data))
 
@@ -223,7 +210,7 @@ csdi = train(dataset_for_training, dataset_for_validating, n_features=missile_da
 
 #-------------------- Testing (Imputation) --------------------#
 from modules import imputation
-gt_res = imputation(dataset_for_testing, orig_data=missile_data, csdi=csdi, saving_path=results_path)
+gt_res = imputation(dataset_for_testing, orig_data=missile_data, csdi=csdi, saving_path=results_path, scaler=scaler)
 
 
 #-------------------- Predict Binary Class Label --------------------#
@@ -235,7 +222,7 @@ import copy
 pred_test = copy.deepcopy(dataset_for_testing)
 pred_test['class_label'] = predicted_label
 
-pr_res = imputation(pred_test, orig_data=missile_data, csdi=csdi, saving_path=results_path, predicted=True)
+pr_res = imputation(pred_test, orig_data=missile_data, csdi=csdi, saving_path=results_path, scaler=scaler, predicted=True)
 
 print(gt_res)
 print(pr_res)

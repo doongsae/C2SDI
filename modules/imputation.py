@@ -12,7 +12,7 @@ import time
 from pypots.utils.metrics import calc_mae, calc_rmse, calc_quantile_crps
 
 def visualize_data(data_mean, data_min, data_max, ori_data, sma_data_list, saving_path, image_idx, predicted):
-  fig = plt.figure(figsize=(8, 6))
+  fig = plt.figure(figsize=(10, 8))
   ax = fig.add_subplot(111, projection='3d')
   
   # Using mean value 
@@ -48,6 +48,19 @@ def visualize_data(data_mean, data_min, data_max, ori_data, sma_data_list, savin
   ax.legend()
   plt.title('Data Visualization')
 
+  # 축 레이블 포맷 설정
+  ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format(int(x), ',')))
+  ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format(int(x), ',')))
+  ax.zaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format(int(x), ',')))
+
+  # 축 레이블 회전
+  ax.tick_params(axis='x', rotation=45)
+  ax.tick_params(axis='y', rotation=45)
+  ax.tick_params(axis='z', rotation=45)
+
+  # 그래프 여백 조정
+  plt.tight_layout()
+
   if predicted:
     file_path = os.path.join(saving_path, "images_gt", str(image_idx) + ".png")
   else:
@@ -55,11 +68,11 @@ def visualize_data(data_mean, data_min, data_max, ori_data, sma_data_list, savin
 
   os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-  plt.savefig(file_path)
+  plt.savefig(file_path, dpi=300, bbox_inches='tight')  # dpi와 bbox_inches 옵션 추가
   plt.close()
 
 
-def imputation(test_dataset, orig_data, csdi, saving_path, predicted=False):
+def imputation(test_dataset, orig_data, csdi, saving_path, scaler, predicted=False):
   # Predict and check elapsed time
   start_time = time.time()
   csdi_results = csdi.predict(test_dataset, n_sampling_times=10)
@@ -97,7 +110,16 @@ def imputation(test_dataset, orig_data, csdi, saving_path, predicted=False):
   # Visualize results and save with images
   for i in range(len(orig_data['test_X'])):
     data_lst = [csdi_imputation[i][j] for j in range(10)]
-    ori_data = orig_data['test_X_ori'][i]
+    inverse_lst = []
+
+    # Use the same scaler for both classes
+    for data in data_lst:
+      inverse_lst.append(scaler.inverse_transform(data))
+
+    data_lst = inverse_lst
+
+    # Use the same scaler for original data
+    ori_data = scaler.inverse_transform(orig_data['test_X_ori'][i])
 
     sma_data_list = []
 
