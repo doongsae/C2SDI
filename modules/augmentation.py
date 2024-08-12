@@ -51,23 +51,11 @@ def augment_polyreg(data, num_augmentations):
   return augmented_datasets
 
 
-def augmentation(total_data, lines):
-  new_lines = lines.copy()
+def augmentation(base_data):
+  augmented_pullup = []
 
-  now_idx = 0
+  for datum in base_data:
+    augmented_pullup.append(datum)
+    augmented_pullup.extend(augment_polyreg(datum, num_augmentations=3))
 
-  for idx in lines:
-    idx = int(idx)
-    if idx == 0:
-      total_data.extend(augment_polyreg(total_data[now_idx], num_augmentations=12))
-      idx_lst = ['0' for i in range(12)]
-      new_lines.extend(idx_lst)
-
-    else:
-      total_data.extend(augment_polyreg(total_data[now_idx], num_augmentations=3))
-      idx_lst = ['1' for i in range(3)]
-      new_lines.extend(idx_lst)
-
-    now_idx += 1
-
-  return total_data, new_lines
+  return augmented_pullup

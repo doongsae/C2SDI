@@ -7,7 +7,7 @@ import os
 import pandas as pd
 import re
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 
 
 parser = argparse.ArgumentParser(description='Argparser')
@@ -40,40 +40,18 @@ random.seed(seed)
 
 
 #-------------------- Load Dataset --------------------#
-total_data = []
-
-file_list = os.listdir(dataset_path)
-file_name_lst = [file for file in file_list if file.endswith('.csv')]
-
-for csv_name in file_name_lst:
-  file_path = os.path.join(dataset_path, csv_name)
-  data = pd.read_csv(file_path, delim_whitespace=True)
-  data.rename(columns={'x': 'X', 'y': 'Y', 'z': 'Z'}, inplace=True)
-  total_data.append(data)
-
-updated_data = []
-columns_to_keep = ['X', 'Y', 'Z', 'vx', 'vy', 'vz']
-                   
-for df in total_data:
-  df = df.filter(items=columns_to_keep)
-  updated_data.append(df)
-
-total_data = updated_data
-
-
-#-------------------- Find Ground Truth Pullup Label --------------------#
-from modules import find_pullup
-lines = find_pullup(total_data=total_data)
+from modules import preprocessing
+pullup_data, non_pullup_data_bm1, non_pullup_data_bm2 = preprocessing(dataset_path=dataset_path)
 
 
 #-------------------- Data Augmentation --------------------#
 from modules import augmentation
-augmented_data, new_line = augmentation(total_data=total_data, lines=lines)
+augmented_pullup = augmentation(base_data=pullup_data)
 
 
 #-------------------- Prepare Dataset --------------------#
-class_0_data = [total_data[i] for i in range(len(total_data)) if new_line[i] == '0']
-class_1_data = [total_data[i] for i in range(len(total_data)) if new_line[i] == '1']
+class_0_data = augmented_pullup
+class_1_data = non_pullup_data_bm1 + non_pullup_data_bm2
 
 def split_data(data):
   train_data, temp_data = train_test_split(data, test_size=0.3, random_state=42)
@@ -83,10 +61,52 @@ def split_data(data):
 train_class_0, valid_class_0, test_class_0 = split_data(class_0_data)
 train_class_1, valid_class_1, test_class_1 = split_data(class_1_data)
 
-# Combine training, validation, and test sets
-train_data = train_class_0 + train_class_1
-valid_data = valid_class_0 + valid_class_1
-test_data = test_class_0 + test_class_1
+
+# 먼저 각 클래스의 데이터를 리스트에서 3D NumPy 배열로 변환
+train_class_0 = np.array(train_class_0)
+valid_class_0 = np.array(valid_class_0)
+test_class_0 = np.array(test_class_0)
+
+train_class_1 = np.array(train_class_1)
+valid_class_1 = np.array(valid_class_1)
+test_class_1 = np.array(test_class_1)
+
+# 클래스 0에 대한 정규화
+scaler_0 = StandardScaler()
+train_class_0_reshaped = train_class_0.reshape(-1, 3)
+scaler_0.fit(train_class_0_reshaped)
+
+train_class_0_normalized = scaler_0.transform(train_class_0_reshaped).reshape(train_class_0.shape)
+valid_class_0_normalized = scaler_0.transform(valid_class_0.reshape(-1, 3)).reshape(valid_class_0.shape)
+test_class_0_normalized = scaler_0.transform(test_class_0.reshape(-1, 3)).reshape(test_class_0.shape)
+
+# 클래스 1에 대한 정규화
+scaler_1 = StandardScaler()
+train_class_1_reshaped = train_class_1.reshape(-1, 3)
+scaler_1.fit(train_class_1_reshaped)
+
+train_class_1_normalized = scaler_1.transform(train_class_1_reshaped).reshape(train_class_1.shape)
+valid_class_1_normalized = scaler_1.transform(valid_class_1.reshape(-1, 3)).reshape(valid_class_1.shape)
+test_class_1_normalized = scaler_1.transform(test_class_1.reshape(-1, 3)).reshape(test_class_1.shape)
+
+# DataFrame으로 변환하는 함수
+def to_dataframe(normalized_data):
+    columns = ['X', 'Y', 'Z']
+    return [pd.DataFrame(data, columns=columns) for data in normalized_data]
+
+# 각 정규화된 데이터를 DataFrame 리스트로 변환
+train_class_0_normalized_df = to_dataframe(train_class_0_normalized)
+valid_class_0_normalized_df = to_dataframe(valid_class_0_normalized)
+test_class_0_normalized_df = to_dataframe(test_class_0_normalized)
+
+train_class_1_normalized_df = to_dataframe(train_class_1_normalized)
+valid_class_1_normalized_df = to_dataframe(valid_class_1_normalized)
+test_class_1_normalized_df = to_dataframe(test_class_1_normalized)
+
+# training, validation, test 세트를 합치기
+train_data = train_class_0_normalized_df + train_class_1_normalized_df
+valid_data = valid_class_0_normalized_df + valid_class_1_normalized_df
+test_data = test_class_0_normalized_df + test_class_1_normalized_df
 
 print("Number of Training/ Validation / Test set: ", len(train_data), '/', len(valid_data), '/', len(test_data))
 
@@ -126,20 +146,6 @@ testingg_df = {
   'X': X_array_t,
   'class_label': test_label,
 }
-
-
-#-------------------- Normalize Dataset --------------------#
-def normalize_sample(sample):
-  scaler = MinMaxScaler()
-  return scaler.fit_transform(sample)
-
-train_X = np.array([normalize_sample(sample) for sample in training_df['X']])
-val_X = np.array([normalize_sample(sample) for sample in validatn_df['X']])
-test_X = np.array([normalize_sample(sample) for sample in testingg_df['X']])
-
-training_df['X'] = train_X
-validatn_df['X'] = val_X
-testingg_df['X'] = test_X
 
 missile_data = {
   "n_features": training_df['X'].shape[-1],
