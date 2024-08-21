@@ -96,7 +96,7 @@ def preprocessing(dataset_path):
 
 
   updated_pullup = []
-  columns_to_keep = ['X', 'Y', 'Z']
+  columns_to_keep = ['X', 'Y', 'Z', 'vx', 'vy', 'vz']
                     
   for df in pullup_data:
     df = df.filter(items=columns_to_keep)
@@ -126,7 +126,7 @@ def preprocessing(dataset_path):
 
   updated_non_pullup_bm1 = []
   updated_non_pullup_bm2 = []
-  columns_to_keep = ['X', 'Y', 'Z']
+  columns_to_keep = ['X', 'Y', 'Z', 'vx', 'vy', 'vz']
                     
   for df in non_pullup_data_bm1:
     df = df.filter(items=columns_to_keep)

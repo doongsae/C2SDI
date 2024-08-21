@@ -46,16 +46,22 @@ def augment_polyreg(data, num_augmentations):
     augmented_data['Y'] = y_pred + np.polyval(adjust_y[::-1], t)
     augmented_data['Z'] = z_pred + np.polyval(adjust_z[::-1], t)
     
+    
+    augmented_data['vx'] = data['vx']
+    augmented_data['vy'] = data['vy']
+    augmented_data['vz'] = data['vz']
+
+    
     augmented_datasets.append(augmented_data)
     
   return augmented_datasets
 
 
-def augmentation(base_data):
+def augmentation(base_data, num_aug=3):
   augmented_pullup = []
 
   for datum in base_data:
     augmented_pullup.append(datum)
-    augmented_pullup.extend(augment_polyreg(datum, num_augmentations=3))
+    augmented_pullup.extend(augment_polyreg(datum, num_augmentations=num_aug))
 
   return augmented_pullup

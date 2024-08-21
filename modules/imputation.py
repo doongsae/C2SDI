@@ -72,7 +72,7 @@ def visualize_data(data_mean, data_min, data_max, ori_data, sma_data_list, savin
   plt.close()
 
 
-def imputation(test_dataset, orig_data, csdi, saving_path, scaler, predicted=False):
+def imputation(test_dataset, orig_data, csdi, saving_path, scaler, predicted=False, viss=True):
   # Predict and check elapsed time
   start_time = time.time()
   csdi_results = csdi.predict(test_dataset, n_sampling_times=10)
@@ -139,7 +139,8 @@ def imputation(test_dataset, orig_data, csdi, saving_path, scaler, predicted=Fal
     sma_data_min = np.min(sma_data_list, axis=0)
     sma_data_max = np.max(sma_data_list, axis=0)
 
-    visualize_data(sma_data_mean, sma_data_min, sma_data_max, ori_data, sma_data_list, saving_path, i, predicted)
+    if viss:
+      visualize_data(sma_data_mean, sma_data_min, sma_data_max, ori_data, sma_data_list, saving_path, i, predicted)
 
 
   return test_MAE

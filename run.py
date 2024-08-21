@@ -69,13 +69,13 @@ train_data_array = np.array(train_data)
 
 # 훈련 데이터로 정규화 수행
 scaler = StandardScaler()
-train_data_reshaped = train_data_array.reshape(-1, 3)
+train_data_reshaped = train_data_array.reshape(-1, 6)
 scaler.fit(train_data_reshaped)
 
 # 모든 데이터셋에 대해 정규화 적용
 def normalize_and_convert(data):
   data_array = np.array(data)
-  data_reshaped = data_array.reshape(-1, 3)
+  data_reshaped = data_array.reshape(-1, 6)
   data_normalized = scaler.transform(data_reshaped).reshape(data_array.shape)
   return data_normalized
 
@@ -87,7 +87,7 @@ test_class_1_normalized = normalize_and_convert(test_class_1)
 
 # DataFrame으로 변환하는 함수
 def to_dataframe(normalized_data):
-  columns = ['X', 'Y', 'Z']
+  columns = ['X', 'Y', 'Z', 'vx', 'vy', 'vz']
   return [pd.DataFrame(data, columns=columns) for data in normalized_data]
 
 # 각 정규화된 데이터를 DataFrame 리스트로 변환
@@ -110,7 +110,7 @@ for i in range(len(valid_class_1)):
 for i in range(len(test_class_1)):
   test_label.append(1)
 
-X_list = [df[['X', 'Y', 'Z']] for df in train_data]
+X_list = [df[['X', 'Y', 'Z', 'vx', 'vy', 'vz']] for df in train_data]
 X_array = np.stack([df.values for df in X_list], axis=0)
 
 training_df = {
@@ -118,7 +118,7 @@ training_df = {
   'class_label': training_label,
 }
 
-X_list_v = [df[['X', 'Y', 'Z']] for df in valid_data]
+X_list_v = [df[['X', 'Y', 'Z', 'vx', 'vy', 'vz']] for df in valid_data]
 X_array_v = np.stack([df.values for df in X_list_v], axis=0)
 
 validatn_df = {
@@ -126,7 +126,7 @@ validatn_df = {
   'class_label': valid_label,
 }
 
-X_list_t = [df[['X', 'Y', 'Z']] for df in test_data]
+X_list_t = [df[['X', 'Y', 'Z', 'vx', 'vy', 'vz']] for df in test_data]
 X_array_t = np.stack([df.values for df in X_list_t], axis=0)
 
 testingg_df = {
