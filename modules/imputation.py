@@ -124,7 +124,7 @@ def imputation(test_dataset, orig_data, csdi, saving_path, scaler, predicted=Fal
     sma_data_list = []
 
     for data in data_lst:
-      df = pd.DataFrame(data, columns=['X', 'Y', 'Z'])
+      df = pd.DataFrame(data, columns=['X', 'Y', 'Z', 'vx', 'vy', 'vz'])
       df = df.sort_values(by='X')
       
       # Calculate a Simple Moving Average (SMA)
