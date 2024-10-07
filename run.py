@@ -92,7 +92,7 @@ use_impact_point = args.use_impact_point
 
 
 #-------------------- Load C2SDI and fix seeds --------------------#
-sys.path.insert(0, current_path)
+sys.path.insert(0, git_path)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
