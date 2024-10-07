@@ -269,9 +269,16 @@ def calc_mre(
 
 
 def calc_quantile_loss(predictions, targets, q: float, eval_points) -> float:
+    # predictions와 targets의 차원을 맞춤
+    if targets.dim() < predictions.dim():
+        targets = targets.unsqueeze(0).expand_as(predictions)
+        
+    if eval_points.dim() < predictions.dim():
+        eval_points = eval_points.unsqueeze(0).expand_as(predictions)
+    
     quantile_loss = 2 * torch.sum(
         torch.abs(
-            (predictions - targets) * eval_points * ((targets <= predictions) * 1.0 - q)
+            (predictions - targets) * eval_points * ((targets <= predictions).float() - q)
         )
     )
     return quantile_loss

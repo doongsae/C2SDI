@@ -27,7 +27,7 @@ class DatasetForCSDI(BaseDataset):
 
     """
 
-    # ! EDIT: return_class_label 추가
+    # ! EDIT: add return_class_label
     def __init__(
         self,
         data: Union[dict, str],
@@ -46,19 +46,36 @@ class DatasetForCSDI(BaseDataset):
         assert target_strategy in ["random", "hist", "mix"]
         self.target_strategy = target_strategy
 
-        # ! EDIT: 추가
+        # ! EDIT
         self.return_class_label = return_class_label
         self.class_label = data['class_label']
 
+    
+    # ! EDIT : We incapacitate get_rand_mask in C2SDI.
     @staticmethod
-    def get_rand_mask(observed_mask):
-        rand_for_mask = torch.rand_like(observed_mask) * observed_mask
-        rand_for_mask = rand_for_mask.reshape(-1)
-        sample_ratio = np.random.rand()  # missing ratio
-        num_observed = observed_mask.sum().item()
-        num_masked = round(num_observed * sample_ratio)
-        rand_for_mask[rand_for_mask.topk(num_masked).indices] = -1
-        cond_mask = (rand_for_mask > 0).reshape(observed_mask.shape).float()
+    def get_rand_mask(observed_mask, condition_ratio=1):
+        """
+        Mask the first `condition_ratio` portion of the data as observed and the rest as missing.
+
+        Parameters:
+        - observed_mask (torch.Tensor): Tensor indicating observed data points.
+        - condition_ratio (float): The ratio of the initial portion of data to be used as condition.
+
+        Returns:
+        - cond_mask (torch.Tensor): Mask indicating the observed data for the initial `condition_ratio` portion.
+        """
+        # Initialize the mask as all zeros (everything is initially unobserved)
+        # cond_mask = torch.zeros_like(observed_mask)
+
+        # n = observed_mask.shape[0]
+        # condition_steps = int(n * condition_ratio)
+
+        # # Set the first `condition_steps` to 1 (observed)
+        # cond_mask[:condition_steps, :] = 1.0
+        
+        import copy
+        cond_mask = copy.deepcopy(observed_mask)
+
         return cond_mask
 
     def get_hist_mask(self, observed_mask, for_pattern_mask):
@@ -100,14 +117,17 @@ class DatasetForCSDI(BaseDataset):
                 The time points (timestamp) of the observed data.
 
         """
-
+    
         if self.return_X_ori:
             observed_data = self.X_ori[idx]
             cond_mask = self.missing_mask[idx]
             indicating_mask = self.indicating_mask[idx]
+
         else:
             observed_data = self.X[idx]
+            
             observed_data, observed_mask = fill_and_get_mask_torch(observed_data)
+            
             if self.target_strategy == "random":
                 cond_mask = self.get_rand_mask(observed_mask)
             else:
@@ -122,6 +142,7 @@ class DatasetForCSDI(BaseDataset):
                 cond_mask = self.get_hist_mask(
                     observed_mask, for_pattern_mask=for_pattern_mask
                 )
+                
             indicating_mask = observed_mask - cond_mask
 
         observed_tp = (
@@ -138,13 +159,15 @@ class DatasetForCSDI(BaseDataset):
             observed_tp,
         ]
 
+
         if self.return_y:
             sample.append(self.y[idx].to(torch.long))
 
-        # ! EDIT: class_label 추가
+        # ! EDIT: add class_label
         if self.return_class_label:
             sample.append(self.class_label[idx])
-
+        
+         
         return sample
 
     def _fetch_data_from_file(self, idx: int) -> Iterable:
@@ -227,11 +250,11 @@ class DatasetForCSDI(BaseDataset):
             cond_mask,
             observed_tp,
         ]
-
+        
         if self.return_y:
             sample.append(torch.tensor(self.file_handle["y"][idx], dtype=torch.long))
 
-        # ! EDIT: class_label 추가
+        # ! EDIT: add class_label
         if self.return_class_label:
             sample.append(self.class_label[idx])
 
@@ -251,7 +274,7 @@ class TestDatasetForCSDI(DatasetForCSDI):
     ):
         super().__init__(data, "random", return_X_ori, file_type)
 
-        # ! EDIT: 추가
+        # ! EDIT
         self.return_class_label = return_class_label
         self.class_label = data['class_label']
 
@@ -302,7 +325,7 @@ class TestDatasetForCSDI(DatasetForCSDI):
         if self.return_y:
             sample.append(self.y[idx].to(torch.long))
 
-        # ! EDIT: class_label 추가
+        # ! EDIT: add class_label
         if self.return_class_label:
             sample.append(self.class_label[idx])
 
@@ -342,7 +365,7 @@ class TestDatasetForCSDI(DatasetForCSDI):
         observed_data = torch.from_numpy(self.file_handle["X"][idx]).to(torch.float32)
         observed_data, observed_mask = fill_and_get_mask_torch(observed_data)
         cond_mask = observed_mask
-
+        
         observed_tp = (
             torch.arange(0, self.n_steps, dtype=torch.float32)
             if "time_points" not in self.file_handle.keys()
@@ -357,11 +380,12 @@ class TestDatasetForCSDI(DatasetForCSDI):
             cond_mask,
             observed_tp,
         ]
+    
 
         if self.return_y:
             sample.append(torch.tensor(self.file_handle["y"][idx], dtype=torch.long))
 
-        # ! EDIT: class_label 추가
+        # ! EDIT: add class_label
         if self.return_class_label:
             sample.append(self.class_label[idx])
 

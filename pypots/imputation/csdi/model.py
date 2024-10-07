@@ -12,6 +12,7 @@ from typing import Union, Optional
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 try:
     import nni
@@ -162,7 +163,7 @@ class CSDI(BaseNNImputer):
         self.n_steps = n_steps
         self.target_strategy = target_strategy
 
-        # ! EDIT: p_uncond 추가; CSDI 논문 기준 0.1 사용
+        # ! EDIT: add p_uncond; use 0.1 at the original CSDI paper
         self.p_uncond = 0.1
 
         # set up the model
@@ -194,7 +195,7 @@ class CSDI(BaseNNImputer):
         self.optimizer = optimizer
         self.optimizer.init_optimizer(self.model.parameters())
 
-    # ! EDIT: class_label 추가
+    # ! EDIT: add class_label
     def _assemble_input_for_training(self, data: list) -> dict:
         (
             indices,
@@ -217,7 +218,7 @@ class CSDI(BaseNNImputer):
     def _assemble_input_for_validating(self, data: list) -> dict:
         return self._assemble_input_for_training(data)
 
-    # ! EDIT: 마찬가지로 class_label 추가
+    # ! EDIT: add class_label
     def _assemble_input_for_testing(self, data: list) -> dict:
         (
             indices,
@@ -233,6 +234,8 @@ class CSDI(BaseNNImputer):
             "observed_tp": observed_tp,
             "class_label": class_label,
         }
+       
+        
         return inputs
 
     def _train_model(
@@ -245,12 +248,18 @@ class CSDI(BaseNNImputer):
         self.best_model_dict = None
 
         try:
-            training_step = 0
+            
             for epoch in range(1, self.epochs + 1):
+                training_step = 0
+                val_step = 0
+                
+                print(f"epoch[{epoch}/{self.epochs}]")
                 self.model.train()
                 epoch_train_loss_collector = []
-                for idx, data in enumerate(training_loader):
+                
+                for idx, data in tqdm(enumerate(training_loader), total=len(training_loader), desc="Training"):
                     training_step += 1
+                    
                     inputs = self._assemble_input_for_training(data)
 
                     # ! EDIT: 
@@ -270,12 +279,15 @@ class CSDI(BaseNNImputer):
 
                 # mean training loss of the current epoch
                 mean_train_loss = np.mean(epoch_train_loss_collector)
+                print(f"epoch:{epoch} training done.")
+
 
                 if val_loader is not None:
                     self.model.eval()
                     val_loss_collector = []
                     with torch.no_grad():
-                        for idx, data in enumerate(val_loader):
+                        for idx, data in tqdm(enumerate(val_loader), total=len(val_loader), desc="Validation"):
+
                             inputs = self._assemble_input_for_validating(data)
 
                             # ! EDIT: 
@@ -360,7 +372,7 @@ class CSDI(BaseNNImputer):
             f"Finished training. The best model is from epoch#{self.best_epoch}."
         )
 
-    # ! EDIT: return_class_label 추가
+    # ! EDIT: add return_class_label
     def fit(
         self,
         train_set: Union[dict, str],
@@ -369,13 +381,12 @@ class CSDI(BaseNNImputer):
         n_sampling_times: int = 1,
         return_class_label: bool = True,
     ) -> None:
-        # Step 1: wrap the input data with classes Dataset and DataLoader
         
-        # ! EDIT: return_class_label 추가
+        # ! EDIT: add return_class_label
         training_set = DatasetForCSDI(
             train_set,
             self.target_strategy,
-            return_X_ori=False,
+            return_X_ori=True, #! EDIT
             file_type=file_type,
             return_class_label=return_class_label
         )
@@ -390,11 +401,11 @@ class CSDI(BaseNNImputer):
             if not key_in_data_set("X_ori", val_set):
                 raise ValueError("val_set must contain 'X_ori' for model validation.")
             
-            # ! EDIT: return_class_label 추가
+            # ! EDIT: add return_class_label
             val_set = DatasetForCSDI(
                 val_set,
                 self.target_strategy,
-                return_X_ori=True,
+                return_X_ori=True, #! EDIT
                 file_type=file_type,
                 return_class_label=return_class_label,
             )
@@ -405,15 +416,13 @@ class CSDI(BaseNNImputer):
                 num_workers=self.num_workers,
             )
 
-        # Step 2: train the model and freeze it
         self._train_model(training_loader, val_loader)
         self.model.load_state_dict(self.best_model_dict)
         self.model.eval()  # set the model as eval status to freeze it.
 
-        # Step 3: save the model if necessary
         self._auto_save_model_if_necessary(confirm_saving=True)
 
-    # ! EDIT: return_class_label 추가
+    # ! EDIT: add return_class_label
     def predict(
         self,
         test_set: Union[dict, str],
@@ -449,10 +458,9 @@ class CSDI(BaseNNImputer):
         """
         assert n_sampling_times > 0, "n_sampling_times should be greater than 0."
 
-        # Step 1: wrap the input data with classes Dataset and DataLoader
-        self.model.eval()  # set the model as eval status to freeze it.
+        self.model.eval()
         
-        # ! EDIT: return_class_label 추가
+        # ! EDIT: add return_class_label
         test_set = TestDatasetForCSDI(test_set, return_X_ori=False, file_type=file_type, return_class_label=return_class_label)
         test_loader = DataLoader(
             test_set,
@@ -462,26 +470,29 @@ class CSDI(BaseNNImputer):
         )
         imputation_collector = []
 
-        # Step 2: process the data with the model
         with torch.no_grad():
-            for idx, data in enumerate(test_loader):
+
+            for idx, data in tqdm(enumerate(test_loader), total=len(test_loader), 
+                                    desc=f"Prediction with {n_sampling_times} samples per datum"):
+                
                 inputs = self._assemble_input_for_testing(data)
+                
                 results = self.model(
                     inputs,
                     training=False,
                     n_sampling_times=n_sampling_times,
                 )
                 imputed_data = results["imputed_data"]
+
                 imputation_collector.append(imputed_data)
 
-        # Step 3: output collection and return
         imputation = torch.cat(imputation_collector).cpu().detach().numpy()
         result_dict = {
             "imputation": imputation,
         }
         return result_dict
 
-    # ! EDIT: return_class_label 추가
+    # ! EDIT: add return_class_label
     def impute(
         self,
         test_set: Union[dict, str],
@@ -505,6 +516,6 @@ class CSDI(BaseNNImputer):
             Imputed data.
         """
 
-        # ! EDIT: return_class_label 추가
+        # ! EDIT: add return_class_label
         result_dict = self.predict(test_set, file_type=file_type, return_class_label=return_class_label)
         return result_dict["imputation"]

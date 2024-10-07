@@ -107,6 +107,7 @@ class BackboneCSDI(nn.Module):
         self, observed_data, cond_mask, indicating_mask, side_info, is_train, observed_tp, class_label
     ):
         loss_sum = 0
+
         for t in range(self.n_diffusion_steps):  # calculate loss for all t
             # * class_label 추가, observed_tp 전달
             loss = self.calc_loss(
@@ -122,6 +123,7 @@ class BackboneCSDI(nn.Module):
     ):
         B, K, L = observed_data.shape
         device = observed_data.device
+
         if is_train != 1:  # for validation
             t = (torch.ones(B) * set_t).long().to(device)
         else:
@@ -160,6 +162,7 @@ class BackboneCSDI(nn.Module):
         residual = (noise - predicted) * target_mask
         num_eval = target_mask.sum()
         loss = (residual**2).sum() / (num_eval if num_eval > 0 else 1)
+
         return loss
 
 

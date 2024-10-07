@@ -9,10 +9,12 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import time
 import os
-
+from tqdm import tqdm
 
 class MissileDataset(Dataset):
   def __init__(self, X, class_label):
+    # Replace NaN values with 0 or another appropriate value
+    X = np.nan_to_num(X, nan=0.0)
     self.data = torch.tensor(X, dtype=torch.float32)
     self.labels = torch.tensor(class_label, dtype=torch.long)
 
@@ -20,6 +22,8 @@ class MissileDataset(Dataset):
     return len(self.labels)
     
   def __getitem__(self, idx):
+    if idx >= len(self.data):
+        print(f"Invalid index {idx}, dataset size is {len(self.data)}")
     return self.data[idx], self.labels[idx]
 
 class TransformerClassifier(nn.Module):
@@ -57,7 +61,7 @@ class PositionalEncoding(nn.Module):
 def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs, device, saving_path):
   model.to(device)
   best_val_accuracy = 0
-  for epoch in range(num_epochs):
+  for epoch in tqdm(range(num_epochs), desc = "Training Pullup Classifier"):
     model.train()
     train_loss = 0
     for batch_data, batch_labels in train_loader:
@@ -86,16 +90,13 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
     train_loss /= len(train_loader)
     val_loss /= len(val_loader)
     val_accuracy = 100 * correct / total
-    
-    if (epoch + 1) % 20 == 0 or epoch == 0:
-      print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.2f}%')
       
     if val_accuracy > best_val_accuracy:
       best_val_accuracy = val_accuracy
-      file_path = os.path.join(saving_path, 'best_model.pth') 
+      file_path = os.path.join(saving_path, 'classifier_best_model.pth') 
       torch.save(model.state_dict(), file_path)
   
-  print(f'Best validation accuracy: {best_val_accuracy:.2f}%')
+  print(f'Pullup classifier Best validation accuracy: {best_val_accuracy:.2f}%')
 
 def test_model(model, test_loader, criterion, device):
   model.eval()
@@ -114,10 +115,13 @@ def test_model(model, test_loader, criterion, device):
   
   test_loss /= len(test_loader)
   test_accuracy = 100 * correct / total
-  print(f'Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%')
-    
+  print(f'Pullup classifier Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%')
+
+
 def inference(model, test_data, device):
   model.eval()
+  # Replace NaN values before inference
+  test_data = np.nan_to_num(test_data, nan=0.0)
   test_tensor = torch.tensor(test_data, dtype=torch.float32).to(device)
   
   with torch.no_grad():
@@ -128,6 +132,8 @@ def inference(model, test_data, device):
 
 def inference_single_sample(model, sample, device):
   model.eval()
+  # Replace NaN values before inference
+  sample = np.nan_to_num(sample, nan=0.0)
   sample_tensor = torch.tensor(sample, dtype=torch.float32).unsqueeze(0).to(device)
   
   with torch.no_grad():
@@ -150,25 +156,25 @@ def measure_inference_time(model, sample, device, num_runs=100):
   return avg_time
 
 
-def main(missile_data, saving_path):
+def main(missile_data, saving_path, num_epochs, inference_mode, existed_model_path):
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   
-  # Create datasets
-  train_dataset = MissileDataset(missile_data['train_X'][:,:90,:], missile_data['train_class_label'])
-  val_dataset = MissileDataset(missile_data['val_X_ori'][:,:90,:], missile_data['val_class_label'])
-  test_dataset = MissileDataset(missile_data['test_X_ori'][:,:90,:], missile_data['test_class_label'])
-  
-  # Create dataloaders
+  # Replace NaN values in the input data
+  for key in ['train_X_classifier', 'val_X_classifier', 'test_X_classifier']:
+    missile_data[key] = np.nan_to_num(missile_data[key], nan=0.0)
+
+  train_dataset = MissileDataset(missile_data['train_X_classifier'], missile_data['train_class_label_classifier'])
+  val_dataset = MissileDataset(missile_data['val_X_classifier'], missile_data['val_class_label_classifier'])
+  test_dataset = MissileDataset(missile_data['test_X_classifier'], missile_data['test_class_label'])
+
   train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
   val_loader = DataLoader(val_dataset, batch_size=128, shuffle=False)
   test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False)
   
-  # Initialize model
-  # input_dim = 6  # x, y, z
-  
-  input_dim = missile_data['train_X'].shape[2] # Modified: set to the actual dimension of the input data
+  # Initialize model. input_dim = 6
+  input_dim = missile_data['train_X_classifier'].shape[2] 
 
-  num_classes = len(np.unique(missile_data['train_class_label']))
+  num_classes = len(np.unique(missile_data['train_class_label_classifier']))
   d_model = 64
   nhead = 4
   num_layers = 2
@@ -176,45 +182,34 @@ def main(missile_data, saving_path):
   
   model = TransformerClassifier(input_dim, num_classes, d_model, nhead, num_layers, dim_feedforward)
   
-  # Loss and optimizer
   criterion = nn.CrossEntropyLoss()
   optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
   
-  # Train the model
-  num_epochs = 500
-  train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs, device, saving_path)
+
+  if not inference_mode:
+    train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs, device, saving_path)
   
-  # Load best model and test
-  file_path = os.path.join(saving_path, 'best_model.pth') 
-  model.load_state_dict(torch.load(file_path))
+    file_path = os.path.join(saving_path, 'classifier_best_model.pth') 
+    model.load_state_dict(torch.load(file_path))
+
+  else:
+    model.load_state_dict(torch.load(existed_model_path))
+    model.to(device)
+
   test_model(model, test_loader, criterion, device)
-  
-  # Perform inference on test data
-  test_predictions = inference(model, missile_data['test_X_ori'], device)
+  test_predictions = inference(model, missile_data['test_X_classifier'], device)
   
   # Measure inference time for a single sample
-  sample = missile_data['test_X_ori'][0]  # 첫 번째 테스트 샘플 사용
+  sample = missile_data['test_X_classifier'][0]  # use the first sample
   avg_inference_time = measure_inference_time(model, sample, device)
   
   return model, test_predictions, avg_inference_time
 
 
-# Usage
-def classification(missile_data, saving_path):
+def classification(missile_data, saving_path, num_epochs, inference_mode, existed_model_path):
   # Assuming missile_data is already loaded
-  model, test_predictions, avg_inference_time = main(missile_data, saving_path)
-  
-  ''' 
-  # Print for debugging
-  print("Test Predictions Shape:", test_predictions.shape)
-  print("Sample of Test Predictions:", test_predictions[:10])  # print the first 10 predictions
-  '''
+  model, test_predictions, avg_inference_time = main(missile_data, saving_path, num_epochs, inference_mode, existed_model_path)
   
   print(f"Average Inference Time for Single Sample: {avg_inference_time*1000:.2f} ms")
-  
-  # Compare predicted and actual labels (optional)
-  if 'test_class_label' in missile_data:
-    accuracy = np.mean(test_predictions == missile_data['test_class_label'])
-    print(f"Test Accuracy: {accuracy:.4f}")
 
   return test_predictions

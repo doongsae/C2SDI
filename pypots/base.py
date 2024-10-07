@@ -159,7 +159,7 @@ class BaseModel(ABC):
             # and also be aware of when they were run
             time_now = datetime.now().__format__("%Y%m%d_T%H%M%S")
             # the actual saving_path for saving both the best model and the tensorboard file
-            self.saving_path = os.path.join(saving_path, time_now)
+            self.saving_path = os.path.join(saving_path, "model_"+time_now)
 
             # initialize self.summary_writer only if saving_path is given and not None
             # otherwise self.summary_writer will be None and the training log won't be saved
