@@ -24,7 +24,12 @@ parser.add_argument('--result_save_path', type=str, default='results/', help="Pa
 parser.add_argument('--csdi_model_path', type=str, default=None, help='''Path for existing C2SDI model.
                                                                          If there are not existiing models, leave it empty.''')
 parser.add_argument('--classifier_model_path', type=str, default=None, help='''Path for existing classifier model.
-                                                                               If there are not existiing models, leave it empty.''')
+                                                                               If there are not existing models, leave it empty.''')
+parser.add_argument('--csdi_scaler_path', type=str, default=None, help='''Path for existing csdi scaler (3 dimension - X, Y, Z).
+                                                                               If there are not existing models, leave it empty.''')
+parser.add_argument('--classifier_scaler_path', type=str, default=None, help='''Path for existing classifier scaler (6 dimension - X, Y, Z, vX, vY, vZ).
+                                                                               If there are not existing models, leave it empty.''')
+                                                                               
 
 # hyperparameters
 parser.add_argument('--time_interval', type=float, default=1.0, help='Sampling interval to shorten the sequence length')
@@ -59,6 +64,8 @@ current_path = os.getcwd()
 git_path = args.path
 dataset_path = args.dataset_path
 results_path = args.result_save_path
+csdi_scaler_path = args.csdi_scaler_path
+classifier_scaler_path = args.classifier_scaler_path
 
 csdi_inference_mode = False
 classifier_inference_mode = False
@@ -207,12 +214,35 @@ test_class_1 = artificial_missing_rows(test_class_1, missing_rate)
 
 
 #-------------------- Normalization --------------------#
+from pickle import dump, load
 
-scaler_for_C2SDI = StandardScaler()
-scaler_for_C2SDI.fit(train_data[:, :, :3].reshape(-1, 3))
+if csdi_scaler_path is None:
+  scaler_for_C2SDI = StandardScaler()
+  scaler_for_C2SDI.fit(train_data[:, :, :3].reshape(-1, 3))
 
-scaler_for_classifier = StandardScaler()
-scaler_for_classifier.fit(train_data.reshape(-1, 6))
+  # save the scaler
+  dump(scaler_for_C2SDI, open('.scaler_for_C2SDI.pkl','wb'))
+  logger.info("Scaler for C2SDI is saved.")
+
+else:
+  logger.info("Scaler for C2SDI received is used.")
+  scaler_for_C2SDI = load(open(csdi_scaler_path,'rb'))
+  scaler_for_C2SDI.fit(train_data[:, :, :3].reshape(-1, 3))
+
+
+if classifier_scaler_path is None:
+  scaler_for_classifier = StandardScaler()
+  scaler_for_classifier.fit(train_data[:, :, :3].reshape(-1, 6))
+
+  # save the scaler
+  from pickle import dump
+  dump(scaler_for_classifier, open('.scaler_for_classifier.pkl','wb'))
+  logger.info("Scaler for pull-up classifier is saved.")
+
+else:
+  logger.info("Scaler for classifier received is used.")
+  scaler_for_classifier = load(open(classifier_scaler_path,'rb'))
+  scaler_for_classifier.fit(train_data[:, :, :3].reshape(-1, 6))
 
 
 def normalize_and_convert(data, scaler, dim):

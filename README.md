@@ -32,6 +32,10 @@ python run.py [path] [data_path] (--other_optional_args)
 
 * `--classifier_model_path` (_Optional_): Path for existing classifier model. If there are not existiing models, leave it empty.
 
+* `--csdi_scaler_path` (_Optional_): Path for existing csdi scaler (3 dimension - X, Y, Z). If there are not existing models, leave it empty.
+
+* `--classifier_scaler_path` (_Optional_): Path for existing classifier scaler (6 dimension - X, Y, Z, vX, vY, vZ). If there are not existing models, leave it empty.
+
 ## Arguments of hyperparameters
 * `--time_interval` (_Optional_): Sampling interval to shorten the sequence length. (default=1.0)
 
