@@ -45,6 +45,7 @@ parser.add_argument('--num_aug', type=int, default=11, help='The number of augme
 parser.add_argument('--missing_rate', type=float, default=0.05, help='Artificial missing rate for data')
 parser.add_argument('--learning_rate', type=float, default=5e-4, help='Training learning rate')
 parser.add_argument('--n_layers', type=int, default=8, help='The number of layers for C2SDI')
+parser.add_argument('--diff_emb_dim', type=int, default=128, help='The dimension of diffusion embedding')
 
 # for data split
 # example: train_ratio = 0.7 / val_ratio = 0.5 => tr/val/te: 0.7/0.15/0.15
@@ -100,6 +101,8 @@ train_ratio = args.train_ratio
 val_ratio = args.val_ratio
 seed = args.seed
 n_layers = args.n_layers
+diff_emb_dim = args.diff_emb_dim
+
 n_sampling_times = args.n_sampling_times
 test_rate = args.test_rate
 use_impact_point = args.use_impact_point
@@ -528,7 +531,8 @@ from modules import train
 
 csdi = train(dataset_for_training, dataset_for_validating, n_features=missile_data['n_features'], 
               saving_path=results_path, model_epochs=model_epochs, batch_size=batch_size, 
-              patience=patience, inference_mode=csdi_inference_mode, existed_model_path=csdi_model_path, learning_rate=learning_rate, n_layers=n_layers)
+              patience=patience, inference_mode=csdi_inference_mode, existed_model_path=csdi_model_path, learning_rate=learning_rate, 
+              n_layers=n_layers, diff_emb_dim=diff_emb_dim)
 
 
 #-------------------- Change the saving path for latest folder --------------------#

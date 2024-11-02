@@ -14,7 +14,7 @@ from pypots.imputation import CSDI
 
 def train(
     training_dataset, validation_dataset, n_features, saving_path, 
-    model_epochs, batch_size, patience, inference_mode, existed_model_path, learning_rate, n_layers
+    model_epochs, batch_size, patience, inference_mode, existed_model_path, learning_rate, n_layers, diff_emb_dim=128,
     ):
 
     # initialize the model
@@ -26,7 +26,7 @@ def train(
         n_channels=64,
         d_time_embedding=128,
         d_feature_embedding=64,
-        d_diffusion_embedding=128,
+        d_diffusion_embedding=diff_emb_dim,
         target_strategy="random",
         n_diffusion_steps=50,
         batch_size=batch_size,
