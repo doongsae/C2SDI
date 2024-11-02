@@ -41,9 +41,9 @@ parser.add_argument('--patience', type=int, default=10, help='''The patience for
                                                                 Leaving it default as None will disable the early-stopping.''')
 parser.add_argument('--classifier_epochs', type=int, default=50, help='The number of epochs for training pullup classifier')
 parser.add_argument('--use_augmentation', action='store_true', help='Augmentation decision')
-parser.add_argument('--num_aug', type=int, default=11, help='The number of augmented samples for each datum')
+parser.add_argument('--num_aug', type=int, default=30, help='The number of augmented samples for each datum')
 parser.add_argument('--missing_rate', type=float, default=0.05, help='Artificial missing rate for data')
-parser.add_argument('--learning_rate', type=float, default=5e-4, help='Training learning rate')
+parser.add_argument('--learning_rate', type=float, default=1e-3, help='Training learning rate')
 parser.add_argument('--n_layers', type=int, default=8, help='The number of layers for C2SDI')
 parser.add_argument('--diff_emb_dim', type=int, default=128, help='The dimension of diffusion embedding')
 
