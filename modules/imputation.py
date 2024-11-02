@@ -17,7 +17,8 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s]: %(message)s')
 logger = logging.getLogger(__name__)
 
-def visualize_data(data_mean, data_min, data_max, ori_data, sma_data_list, saving_path, image_idx, predicted, indi_len, real_test):
+def visualize_data(data_mean, data_min, data_max, ori_data, sma_data_list, 
+                   saving_path, image_idx, predicted, indi_len, real_test, num_vis):
 
   nan_mask = indi_len.copy()
 
@@ -67,7 +68,7 @@ def visualize_data(data_mean, data_min, data_max, ori_data, sma_data_list, savin
     # ax.plot([x_mean[i], x_mean[i]], [y_mean[i], y_mean[i]], [data_min[i, 2], data_max[i, 2]], color='lightblue', alpha=0.3)
 
   # Draw 1 randomly selected Imputation results
-  random_indices = random.sample(range(len(sma_data_list)), 1) ### 3개 -> 1개
+  random_indices = random.sample(range(len(sma_data_list)), num_vis) ### 3개 -> 1개
   color = 'darkblue'
 
   for idx in random_indices:
@@ -125,36 +126,45 @@ def visualize_data(data_mean, data_min, data_max, ori_data, sma_data_list, savin
   plt.close()
 
 
-def calculate_metrics_with_scaling(data, csdi_imputation, orig_data, data_idx_list, rate_list, scaler):
-  mae_calc_list = []
-  rmse_calc_list = []
-  crps_calc_list = []
+def calculate_metrics_with_scaling(data, csdi_imputation, class_label, orig_data, data_idx_list, length_list, scaler):
+  mae_calc_list_0, mae_calc_list_1, mae_calc_list_all = [], [], []
+  rmse_calc_list_0, rmse_calc_list_1, rmse_calc_list_all = [], [], []
+  crps_calc_list_0, crps_calc_list_1, crps_calc_list_all = [], [], []
 
-  for rate in tqdm(rate_list, desc="Calculating metrics"):
-      rres_mae = 0
-      rres_rmse = 0
-      rres_crps = 0
-      
+  for fixed_length in tqdm(length_list, desc="Calculating metrics"):
+      # Initialize metrics for each class and overall
+      rres_mae_0, rres_mae_1, rres_mae_all = 0, 0, 0
+      rres_rmse_0, rres_rmse_1, rres_rmse_all = 0, 0, 0
+      rres_crps_0, rres_crps_1, rres_crps_all = 0, 0, 0
+
+      # Initialize counts for each class to calculate average
+      count_0, count_1 = 0, 0
+
       for i in range(data.shape[0]):
-          rate_data = [data[i][j] for j in data_idx_list[i][:int(len(data_idx_list[i]) * rate)]]
-          rate_data_for_crps = [csdi_imputation[i][0][j] for j in data_idx_list[i][:int(len(data_idx_list[i]) * rate)]]
-          rate_orig = [orig_data['test_X_ori'][i][j] for j in data_idx_list[i][:int(len(data_idx_list[i]) * rate)]]
-          rate_mask = [orig_data['test_X_indicating_mask'][i][j] for j in data_idx_list[i][:int(len(data_idx_list[i]) * rate)]]
-          
+          if fixed_length == 'full':
+              indices = data_idx_list[i]
+          else:
+              indices = data_idx_list[i][:fixed_length]
+
+          rate_data = [data[i][j] for j in indices]
+          rate_data_for_crps = [csdi_imputation[i][0][j] for j in indices]
+          rate_orig = [orig_data['test_X_ori'][i][j] for j in indices]
+          rate_mask = [orig_data['test_X_indicating_mask'][i][j] for j in indices]
+
           # Reshape data for inverse transform
           rate_data = np.array(rate_data)
           rate_data_for_crps = np.array(rate_data_for_crps)
           rate_orig = np.array(rate_orig)
-          
+
           if rate_data.size == 0:
-              break
+              continue
 
           # Apply inverse transform & flatten
           rate_data_inverse = scaler.inverse_transform(rate_data).flatten()
           rate_data_inverse_for_crps = scaler.inverse_transform(rate_data_for_crps).flatten()
           rate_orig_inverse = scaler.inverse_transform(rate_orig).flatten()
           rate_mask = np.array(rate_mask).flatten()
-          
+
           testing_mae = calc_mae(
               rate_data_inverse,
               np.nan_to_num(rate_orig_inverse, nan=0.0),
@@ -166,30 +176,64 @@ def calculate_metrics_with_scaling(data, csdi_imputation, orig_data, data_idx_li
               np.nan_to_num(rate_orig_inverse, nan=0.0),
               rate_mask
           )
-          
+
           testing_crps = calc_quantile_crps(
               rate_data_inverse_for_crps.reshape(1, -1, data.shape[-1]),
               np.nan_to_num(rate_orig_inverse, nan=0.0).reshape(1, -1, data.shape[-1]),
               rate_mask.reshape(1, -1, data.shape[-1])
           )
 
-          rres_mae += testing_mae
-          rres_rmse += testing_rmse
-          rres_crps += testing_crps
+          # Add to class-specific metrics
+          if class_label[i] == 0:
+              rres_mae_0 += testing_mae
+              rres_rmse_0 += testing_rmse
+              rres_crps_0 += testing_crps
+              count_0 += 1
+          elif class_label[i] == 1:
+              rres_mae_1 += testing_mae
+              rres_rmse_1 += testing_rmse
+              rres_crps_1 += testing_crps
+              count_1 += 1
 
-      rres_mae /= data.shape[0]
-      rres_rmse /= data.shape[0]
-      rres_crps /= data.shape[0]
+          # Add to overall metrics
+          rres_mae_all += testing_mae
+          rres_rmse_all += testing_rmse
+          rres_crps_all += testing_crps
 
-      mae_calc_list.append(rres_mae)
-      rmse_calc_list.append(rres_rmse)
-      crps_calc_list.append(rres_crps)
+      # Calculate average metrics for class 0 and 1, and for all
+      if count_0 > 0:
+          mae_calc_list_0.append(rres_mae_0 / count_0)
+          rmse_calc_list_0.append(rres_rmse_0 / count_0)
+          crps_calc_list_0.append(rres_crps_0 / count_0)
+      else:
+          mae_calc_list_0.append(float('nan'))
+          rmse_calc_list_0.append(float('nan'))
+          crps_calc_list_0.append(float('nan'))
 
-  return mae_calc_list, rmse_calc_list, crps_calc_list
+      if count_1 > 0:
+          mae_calc_list_1.append(rres_mae_1 / count_1)
+          rmse_calc_list_1.append(rres_rmse_1 / count_1)
+          crps_calc_list_1.append(rres_crps_1 / count_1)
+      else:
+          mae_calc_list_1.append(float('nan'))
+          rmse_calc_list_1.append(float('nan'))
+          crps_calc_list_1.append(float('nan'))
+
+      # Calculate average metrics for all data points
+      mae_calc_list_all.append(rres_mae_all / data.shape[0])
+      rmse_calc_list_all.append(rres_rmse_all / data.shape[0])
+      crps_calc_list_all.append(rres_crps_all / data.shape[0])
+
+  return { ## 바뀐 부분 ##
+      'class_0': (mae_calc_list_0, rmse_calc_list_0, crps_calc_list_0),
+      'class_1': (mae_calc_list_1, rmse_calc_list_1, crps_calc_list_1),
+      'all': (mae_calc_list_all, rmse_calc_list_all, crps_calc_list_all)
+  }
 
 
 
-def imputation(test_dataset, orig_data, real_test, csdi, saving_path, scaler, n_sampling_times, batch_size, predicted=False, viss=True):
+def imputation(test_dataset, orig_data, real_test, csdi, saving_path, scaler, 
+               n_sampling_times, batch_size, num_vis, predicted=False, viss=True):
   # Predict and check elapsed time
   start_time = time.time()
   csdi_results = csdi.predict(test_dataset, n_sampling_times=n_sampling_times)
@@ -209,38 +253,47 @@ def imputation(test_dataset, orig_data, real_test, csdi, saving_path, scaler, n_
 
   ############## Calculating metrics ##############
 
-  rate_list = [0.2, 0.4, 0.6, 0.8, 1.0]
-  mae_results, rmse_results, crps_results = calculate_metrics_with_scaling(data, csdi_imputation, orig_data,
-                                                                           data_idx_list, rate_list, scaler)
+  length_list = [10, 20, 30, 40, 'full']
+  class_label = test_dataset['class_label']
+  results = calculate_metrics_with_scaling(data, csdi_imputation, class_label, orig_data,
+                                          data_idx_list, length_list, scaler)
+
+  mae_results_0, rmse_results_0, crps_results_0 = results['class_0']
+  mae_results_1, rmse_results_1, crps_results_1 = results['class_1']
+  mae_results_all, rmse_results_all, crps_results_all = results['all']
 
   ############## Calculating MAE ##############
-  print(" MAE with ", end="")
-  for i in range(5):
-    if i != 4:
-      print(f"Rate {rate_list[i]:.1f}: {mae_results[i]:.4f} / ", end='')
-    else:
-      print(f"Rate {rate_list[i]:.1f}: {mae_results[i]:.4f}")
-
+  print("MAE with ", end="")
+  for i in range(len(length_list)):
+      if i != len(length_list) - 1:
+          print(f"Length {length_list[i]}: Class 0: {mae_results_0[i]:.4f}, Class 1: {mae_results_1[i]:.4f}, All: {mae_results_all[i]:.4f} ", end='\n')
+          # print(f"Length {length_list[i]}: Class 1: {mae_results_1[i]:.4f} ", end='\n')
+      else:
+          print(f"Full data: Class 0: {mae_results_0[i]:.4f}, Class 1: {mae_results_1[i]:.4f}, All: {mae_results_all[i]:.4f} ", end='\n')
+          # print(f"Full data: Class 1: {mae_results_1[i]:.4f} ", end='\n')
 
   ############## Calculating RMSE ##############
   print("RMSE with ", end="")
-  for i in range(5):
-    if i != 4:
-      print(f"Rate {rate_list[i]:.1f}: {rmse_results[i]:.4f} / ", end='')
-    else:
-      print(f"Rate {rate_list[i]:.1f}: {rmse_results[i]:.4f}")
-
+  for i in range(len(length_list)):
+      if i != len(length_list) - 1:
+          print(f"Length {length_list[i]}: Class 0: {rmse_results_0[i]:.4f}, Class 1: {rmse_results_1[i]:.4f}, All: {rmse_results_all[i]:.4f} ", end='\n')
+          # print(f"Length {length_list[i]}: Class 1: {rmse_results_1[i]:.4f} ", end='\n')
+      else:
+          print(f"Full data: Class 0: {rmse_results_0[i]:.4f}, Class 1: {rmse_results_1[i]:.4f}, All: {rmse_results_all[i]:.4f} ", end='\n')
+          # print(f"Full data: Class 1: {rmse_results_1[i]:.4f} ", end='\n')
 
   ############## Calculating CRPS ##############
   print("CRPS with ", end="")
-  for i in range(5):
-    if i != 4:
-      print(f"Rate {rate_list[i]:.1f}: {crps_results[i]:.4f} / ", end='')
-    else:
-      print(f"Rate {rate_list[i]:.1f}: {crps_results[i]:.4f}")
+  for i in range(len(length_list)):
+      if i != len(length_list) - 1:
+          print(f"Length {length_list[i]}: Class 0: {crps_results_0[i]:.4f}, Class 1: {crps_results_1[i]:.4f}, All: {crps_results_all[i]:.4f} ", end='\n')
+          # print(f"Length {length_list[i]}: Class 1: {crps_results_1[i]:.4f} ", end='\n')
+      else:
+          print(f"Full data: Class 0: {crps_results_0[i]:.4f}, Class 1: {crps_results_1[i]:.4f}, All: {crps_results_all[i]:.4f} ", end='\n')
+          # print(f"Full data: Class 1: {crps_results_1[i]:.4f} ", end='\n')
 
   logger.info(f"Elapsed time per sample: {(end_time - start_time) / (len(test_dataset) * 4 * batch_size):.4f} s")
-
+  
   if (not predicted):  
     test_metric = "Imputation Done. Please check the outputs."
   else:
@@ -282,7 +335,8 @@ def imputation(test_dataset, orig_data, real_test, csdi, saving_path, scaler, n_
     indi_len = orig_data['test_X_indicating_mask'][i]
     
     if viss:
-      visualize_data(sma_data_mean, sma_data_min, sma_data_max, ori_data, sma_data_list, saving_path, i, predicted, indi_len, real_test[i])
+      visualize_data(sma_data_mean, sma_data_min, sma_data_max, ori_data, sma_data_list, 
+                     saving_path, i, predicted, indi_len, real_test[i], num_vis)
 
 
   return test_metric

@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 import logging
 import random
+from tqdm import tqdm
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s]: %(message)s')
 logger = logging.getLogger(__name__)
@@ -40,24 +41,24 @@ def pad_data_to_max_length(data, max_length):
 
 
 def preprocessing(dataset_path, interval, adjusted):
-    pullup_path = os.path.join(dataset_path, 'pull_up_0826')
+    pullup_path = os.path.join(dataset_path, 'pull_up_0913')
     non_pullup_path_BM1 = os.path.join(dataset_path, 'non_pull_up/BM1')
     
     # Get file lists
     pullup_files = [os.path.join(root, file) for root, dirs, files in os.walk(pullup_path) for file in files if file.endswith('.csv')]
     nonpullup_files_bm1 = [os.path.join(root, file) for root, dirs, files in os.walk(non_pullup_path_BM1) for file in files if file.endswith('.csv')]
-    
+
     # Read and process data
     pullup_data = []
     pullup_cols = ['time', 'phase', 'x', 'y', 'z', 'vx', 'vy', 'vz', 'lat', 'lon', 'alt']
-    for file in pullup_files:
+    for file in tqdm(pullup_files):
         data = pd.read_csv(file, sep=',', header=0, names=pullup_cols)
         data.rename(columns={'x': 'X', 'y': 'Y', 'z': 'Z'}, inplace=True)
         pullup_data.append(data[['X', 'Y', 'Z', 'vx', 'vy', 'vz']]) 
 
     non_pullup_data_bm1 = []
     bm1_cols = ['time', 'lat', 'lon', 'alt', 'x', 'y', 'z', 'vx', 'vy', 'vz']
-    for file in nonpullup_files_bm1:
+    for file in tqdm(nonpullup_files_bm1):
         data = pd.read_csv(file, header=None, names=bm1_cols)
         data.rename(columns={'x': 'X', 'y': 'Y', 'z': 'Z'}, inplace=True)
         non_pullup_data_bm1.append(data[['X', 'Y', 'Z', 'vx', 'vy', 'vz']]) 
@@ -66,12 +67,12 @@ def preprocessing(dataset_path, interval, adjusted):
     non_pullup_data_bm1 = [df for df in non_pullup_data_bm1 if len(df) > 1]
     sampled_data, sampled_bm1, sampled_bm2 = [], [], []
     intervals = [interval / 0.1, interval / 0.1]
-    for data in pullup_data:
+    for data in tqdm(pullup_data):
         init_data = data
         temp_data = uniform_sampling(init_data, intervals[0])
         sampled_data.append(temp_data)
 
-    for data in non_pullup_data_bm1:
+    for data in tqdm(non_pullup_data_bm1):
         init_data = data
         temp_data = uniform_sampling(init_data, intervals[1])
         sampled_bm1.append(temp_data)

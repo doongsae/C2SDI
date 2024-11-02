@@ -12,14 +12,14 @@ import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s]: %(message)s')
 logger = logging.getLogger(__name__)
-
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 #-------------------- Entering arguments --------------------#
 
 parser = argparse.ArgumentParser(description='Argparser')
-parser.add_argument('--path', default="/mlainas/seonggyun/C2SDI_final/C2SDI_new/", type=str, help='Enter the path with C2SDI git repository')
+parser.add_argument('--path', default="/mlainas/seonggyun/C2SDI_final/C2SDI/", type=str, help='Enter the path with C2SDI git repository')
 parser.add_argument('--dataset_path', default="/data1/seonggyun/hanhwa/20240826_data/", type=str, help='Enter the path of dataset')
-# parser.add_argument('--dataset_path', default="/data1/seonggyun/hanhwa/20240826_data_toy36/", type=str, help='Enter the path of dataset')
+# parser.add_argument('--dataset_path', default="/data1/seonggyun/hanhwa/20240826_data_toy240/", type=str, help='Enter the path of dataset')
 parser.add_argument('--result_save_path', type=str, default='results/', help="Path for saving model and imputation results")
 parser.add_argument('--csdi_model_path', type=str, default=None, help='''Path for existing C2SDI model.
                                                                          If there are not existiing models, leave it empty.''')
@@ -43,7 +43,8 @@ parser.add_argument('--classifier_epochs', type=int, default=50, help='The numbe
 parser.add_argument('--use_augmentation', action='store_true', help='Augmentation decision')
 parser.add_argument('--num_aug', type=int, default=11, help='The number of augmented samples for each datum')
 parser.add_argument('--missing_rate', type=float, default=0.05, help='Artificial missing rate for data')
-
+parser.add_argument('--learning_rate', type=float, default=5e-4, help='Training learning rate')
+parser.add_argument('--n_layers', type=int, default=8, help='The number of layers for C2SDI')
 
 # for data split
 # example: train_ratio = 0.7 / val_ratio = 0.5 => tr/val/te: 0.7/0.15/0.15
@@ -56,6 +57,12 @@ parser.add_argument('--seed', type=int, default=42, help='Seed for overall runni
 parser.add_argument('--n_sampling_times', type=int, default=1, help='The number of sampling times for testing the model to sample from the diffusion process')
 parser.add_argument('--test_rate', type=float, default=0.2, help='A rate of conditions for test')
 parser.add_argument('--use_impact_point', action='store_true',help='Impact point given')
+parser.add_argument('--visualization', type=bool, default=True, help='Argument whether process Visualization or not')
+parser.add_argument('--num_visualization', type=int, default=1, help='The number of generated samples(trajectories) to visualize')
+
+# new
+parser.add_argument('--sampling_true', type=bool, default=False, help='Argument for sampling pullup data')
+parser.add_argument('--scale', type=bool, default=True, help='Argument for scaling augmentation')
 
 
 args = parser.parse_args()
@@ -87,14 +94,21 @@ patience = args.patience
 use_augmentation = args.use_augmentation
 num_aug = args.num_aug
 missing_rate = args.missing_rate
+learning_rate = args.learning_rate
 
 train_ratio = args.train_ratio
 val_ratio = args.val_ratio
 seed = args.seed
-
+n_layers = args.n_layers
 n_sampling_times = args.n_sampling_times
 test_rate = args.test_rate
 use_impact_point = args.use_impact_point
+num_visualization = args.num_visualization
+viss = args.visualization
+
+# new
+scale = args.scale
+sampling_true = args.sampling_true
 
 
 
@@ -153,7 +167,35 @@ train_class_1, valid_class_1, test_class_1 = initial_masking(train_class_1), ini
 #-------------------- Data Augmentation (recently for non-pullup data) --------------------#
 from modules import augmentation
 if use_augmentation:
-  train_class_1 = augmentation(base_data=train_class_1, num_aug=num_aug)
+  train_class_1 = augmentation(base_data=train_class_1, num_aug=num_aug, scale=scale)
+  
+  # 디버깅을 위한 데이터 비교 코드 추가
+  logger.info("\n=== 데이터 증강 디버깅 정보 ===")
+  
+  # 원본 데이터와 증강된 데이터의 기본 통계량 비교
+  original_mean = np.nanmean(train_class_1[:len(train_class_1)//(num_aug+1)], axis=(0,1))
+  augmented_mean = np.nanmean(train_class_1[len(train_class_1)//(num_aug+1):], axis=(0,1))
+  original_std = np.nanstd(train_class_1[:len(train_class_1)//(num_aug+1)], axis=(0,1))
+  augmented_std = np.nanstd(train_class_1[len(train_class_1)//(num_aug+1):], axis=(0,1))
+  
+  logger.info(f"원본 데이터 개수: {len(train_class_1)//(num_aug+1)}")
+  logger.info(f"증강된 데이터 개수: {len(train_class_1) - len(train_class_1)//(num_aug+1)}")
+  logger.info("\n[평균값 비교]")
+  logger.info(f"원본 데이터 평균 (X,Y,Z): {original_mean}")
+  logger.info(f"증강 데이터 평균 (X,Y,Z): {augmented_mean}")
+  logger.info("\n[표준편차 비교]")
+  logger.info(f"원본 데이터 표준편차 (X,Y,Z): {original_std}")
+  logger.info(f"증강 데이터 표준편차 (X,Y,Z): {augmented_std}")
+  
+  # NaN 값 비율 비교
+  original_nan_ratio = np.isnan(train_class_1[:len(train_class_1)//(num_aug+1)]).mean()
+  augmented_nan_ratio = np.isnan(train_class_1[len(train_class_1)//(num_aug+1):]).mean()
+  logger.info(f"\n[NaN 비율 비교]")
+  logger.info(f"원본 데이터 NaN 비율: {original_nan_ratio:.4f}")
+  logger.info(f"증강 데이터 NaN 비율: {augmented_nan_ratio:.4f}")
+  
+  logger.info("=== 디버깅 정보 출력 완료 ===\n")
+  
   ## if you want to use augmentation for validation data, activate the line below.
   # valid_class_1 = augmentation(base_data=valid_class_1, num_aug=num_aug) 
   logger.info("Data Augmentation done.")
@@ -162,6 +204,8 @@ else:
 
 
 train_data = np.concatenate([train_class_0, train_class_1], axis=0)
+
+
 
 
 #-------------------- Catching Impact Point --------------------#
@@ -179,7 +223,7 @@ train_data_last_indices = [find_last_real_index(data) for data in train_data]
 valid_class_0_last_indices = [find_last_real_index(data) for data in valid_class_0]
 valid_class_1_last_indices = [find_last_real_index(data) for data in valid_class_1]
 test_class_0_last_indices = [find_last_real_index(data) for data in test_class_0]
-test_class_1_last_indices = [find_last_real_index(data) for data in test_class_0]
+test_class_1_last_indices = [find_last_real_index(data) for data in test_class_1]
 
 valid_data_last_indices = np.concatenate([valid_class_0_last_indices, valid_class_1_last_indices])
 test_data_last_indices = np.concatenate([test_class_0_last_indices, test_class_1_last_indices])
@@ -349,15 +393,16 @@ def masking_condition(data, rate=1.0, axis=1):
   initial_exclude_rate = rate # making by rate
   initial_exclude_count = np.asarray(n * initial_exclude_rate).astype(int) 
   start_idx = list(initial_exclude_count)
-
   if axis == 1:
       indices = np.arange(data.shape[1])
-      data[:, indices >= start_idx[0], :] = np.nan 
+      for i in range(data.shape[0]):
+          temp_idx = np.where(~np.isnan(data[i, :, 0]))[0][0]
+          data[i, indices >= start_idx[i] + temp_idx, :] = np.nan 
   elif axis == 0:
       data[start_idx:, :, :] = np.nan 
   else:
       raise ValueError("Axis should be 0 or 1.")
-      
+
   return data
 
 
@@ -483,7 +528,18 @@ from modules import train
 
 csdi = train(dataset_for_training, dataset_for_validating, n_features=missile_data['n_features'], 
               saving_path=results_path, model_epochs=model_epochs, batch_size=batch_size, 
-              patience=patience, inference_mode=csdi_inference_mode, existed_model_path=csdi_model_path)
+              patience=patience, inference_mode=csdi_inference_mode, existed_model_path=csdi_model_path, learning_rate=learning_rate, n_layers=n_layers)
+
+
+#-------------------- Change the saving path for latest folder --------------------#
+def get_latest_folder(path='.'):
+    folders = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f))]
+    latest_folder = max(folders, key=lambda f: os.path.getctime(os.path.join(path, f)))
+
+    return latest_folder
+
+latest_folder = get_latest_folder(path=results_path)
+latest_folder_path = os.path.join(results_path, latest_folder)
 
 
 #-------------------- Predict Binary Class Label --------------------#
@@ -491,14 +547,15 @@ from modules import imputation
 from modules import classification
 import copy
 
-predicted_label = classification(missile_data=missile_data, saving_path=results_path, num_epochs=classifier_epochs, 
+predicted_label = classification(missile_data=missile_data, saving_path=latest_folder_path, num_epochs=classifier_epochs, 
                                   inference_mode=classifier_inference_mode, existed_model_path=classifier_model_path)
 
 
 pred_test = copy.deepcopy(dataset_for_testing)
 pred_test['class_label'] = predicted_label
 
-pr_res = imputation(pred_test, orig_data=missile_data, real_test=real_test, csdi=csdi, saving_path=results_path, 
-                    scaler=scaler_for_C2SDI, predicted=True, n_sampling_times=n_sampling_times, batch_size=batch_size, viss=True)
+pr_res = imputation(pred_test, orig_data=missile_data, real_test=real_test, csdi=csdi, saving_path=latest_folder_path, 
+                    scaler=scaler_for_C2SDI, predicted=True, n_sampling_times=n_sampling_times, batch_size=batch_size, 
+                    num_vis=num_visualization, viss=viss)
 
 print(pr_res)

@@ -14,14 +14,14 @@ from pypots.imputation import CSDI
 
 def train(
     training_dataset, validation_dataset, n_features, saving_path, 
-    model_epochs, batch_size, patience, inference_mode, existed_model_path
+    model_epochs, batch_size, patience, inference_mode, existed_model_path, learning_rate, n_layers
     ):
 
     # initialize the model
     csdi = CSDI(
         n_steps=None,
         n_features=n_features,
-        n_layers=8,
+        n_layers=n_layers,
         n_heads=4,
         n_channels=64,
         d_time_embedding=128,
@@ -32,7 +32,7 @@ def train(
         batch_size=batch_size,
         epochs=model_epochs,
         patience=patience,
-        optimizer=Adam(lr=5e-4),
+        optimizer=Adam(lr=learning_rate),
 
         num_workers=0,
         device="cuda",
